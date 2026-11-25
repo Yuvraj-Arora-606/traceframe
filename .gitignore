@@ -6,3 +6,6 @@ test-results/
 artifacts/
 src/assets/hero.png
 *.log
+
+.env.local
+.env.*.local
