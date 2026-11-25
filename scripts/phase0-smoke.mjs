@@ -38,7 +38,14 @@ await page.locator('#file-input').setInputFiles(file);
 await page.locator('#preview-state').waitFor({ state: 'visible', timeout: 5_000 });
 await page.getByRole('button', { name: 'Check this image' }).click();
 const started = Date.now();
+const scanAnimation = await page.waitForFunction(() => {
+  const overlay = document.querySelector('.scan-overlay');
+  const sweep = document.querySelector('.scan-sweep');
+  return overlay && getComputedStyle(overlay).display !== 'none' && sweep && getComputedStyle(sweep).animationName === 'scanPass';
+}, null, { timeout: 3_000 }).then(() => true).catch(() => false);
+if (!scanAnimation) throw new Error('The image scan animation did not start.');
 await page.waitForFunction(() => /AI origin recorded|Origin unknown|Credential failed validation|Credential found|Origin check unavailable/.test(document.querySelector('#result-content')?.innerText ?? ''), null, { timeout: 30_000 });
+if (await page.locator('#drop-zone').evaluate((element) => element.classList.contains('is-scanning'))) throw new Error('The scan animation remained active after the result appeared.');
 const resultText = await page.locator('#result-content').innerText();
 if (/\b\d+\s*\/\s*100\b|Visual model signal|role="meter"/.test(resultText)) throw new Error('A numeric visual score is still being shown.');
 if (process.env.IMAGE_PROVENANCE === 'ai-generated' && !resultText.includes('AI origin recorded')) throw new Error('Known AI origin was not surfaced in the main result.');

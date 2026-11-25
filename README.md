@@ -1,17 +1,33 @@
 # Traceframe
 
-Traceframe checks an image for Content Credentials that record how it was created or edited, and shows basic file details. It does not guess whether an image without a credential is real or AI-generated.
+**A quieter way to inspect where an image came from.**
 
-## Run locally
+Traceframe reads Content Credentials embedded in an image and shows basic file details. When a credential records AI generation, Traceframe surfaces that record. When there is no usable record, it says **Origin unknown**—it does not pretend that missing metadata proves an image is real.
 
-Use Node.js 22.12 or newer.
+> Traceframe is an experimental provenance viewer, not a universal AI-image detector or forensic verification service.
+
+## What it does
+
+- Reads C2PA Content Credentials locally in your browser.
+- Highlights an AI-generation claim when the image’s credential records one.
+- Reports missing, invalid, and unreadable credentials as distinct outcomes.
+- Shows basic file information and optional exploratory image maps.
+- Keeps the selected image on your device; there is no image-upload endpoint.
+
+## Try it locally
+
+Requirements: Node.js 22.12 or newer.
 
 ```sh
+git clone https://github.com/Yuvraj-Arora-606/traceframe.git
+cd traceframe
 npm ci
 npm run dev
 ```
 
-## Checks
+Vite prints a local URL, usually `http://localhost:5173`.
+
+## Verify a change
 
 ```sh
 npm test
@@ -19,22 +35,31 @@ npm run build
 npm run test:phase0
 ```
 
-The browser smoke test uses Chrome and writes its report and screenshot under the ignored `artifacts/` directory. Set `CHROME_PATH` if Chrome is installed elsewhere. For a known-image check, set `IMAGE_PATH` and optionally `IMAGE_PROVENANCE=ai-generated` or `IMAGE_PROVENANCE=camera-photo`. `MOBILE=1`, `PROFILE_DIR=<path>`, and `BASE_URL=<url>` configure viewport, browser profile, and server address.
+The Playwright smoke check uses Chrome and writes its screenshot and report under the ignored `artifacts/` directory. You can set `CHROME_PATH`, `BASE_URL`, `PROFILE_DIR`, or `MOBILE=1`. To check a local reference image, set `IMAGE_PATH`; optionally set `IMAGE_PROVENANCE=ai-generated` or `IMAGE_PROVENANCE=camera-photo` to assert the expected result.
 
-## What a result means
+## Read the result
 
-- **AI origin recorded:** the file contains a Content Credential that records AI generation. Review the listed generator, signer, and history before relying on it.
-- **Origin unknown:** no usable AI-generation record was found. This does not prove the image is camera-taken or authentic.
-- **Credential failed validation / check unavailable:** the recorded claim could not be relied on or the app could not read it.
+| Result | Meaning |
+| --- | --- |
+| **AI origin recorded** | A readable Content Credential declares AI generation. Review the credential’s signer and history before relying on it. |
+| **Origin unknown** | No usable AI-generation record was found. The image may be real or AI-generated. |
+| **Credential failed validation** | A credential was present, but its integrity check reported a problem. |
+| **Origin check unavailable** | The browser could not read the credential. |
 
-The exploratory image maps are educational views only. Traceframe does not provide a visual AI detector or an authenticity score because the tested classifier did not reliably separate known AI and camera images.
+Credentials can be absent, stripped, or incomplete. Even a recorded claim needs context; Traceframe does not determine whether an image depicts a true event.
 
-The app has no analytics, accounts, cookies, persistence, API route, or image-upload endpoint. Credential parsing and image maps run in the browser. The C2PA WASM runtime is bundled with the static app.
+## Privacy and architecture
 
-## Deploy to Vercel
+The app is a static Vite site. Credential parsing and image maps run in the browser using the C2PA Web SDK and its bundled WASM runtime. Traceframe has no accounts, analytics, cookies, database, backend, or image-upload API. The visual classifier was removed after it failed to distinguish the supplied known-AI and camera examples reliably; **there is no AI-likelihood score**.
 
-Import the Git repository in Vercel. This is a static Vite app with no server function or database. The included `vercel.json` builds with `npm run build` and publishes `dist/`.
+## Deploy with Vercel
 
-## Attribution
+Import this repository in Vercel. The included `vercel.json` sets the Vite framework, installs with `npm ci`, builds with `npm run build`, and publishes `dist/`. No environment variables are required.
 
-The C2PA reader is provided by [`@contentauth/c2pa-web`](https://github.com/contentauth/c2pa-web), distributed under the MIT license. The previously tested visual classifier was removed from the product because it gave nearly identical low signals for the supplied known-AI and camera images; its experiment notes remain in [the model validation record](docs/model-validation.md).
+## Built with
+
+- [Vite](https://vite.dev/)
+- [`@contentauth/c2pa-web`](https://github.com/contentauth/c2pa-web) (MIT)
+- [Playwright](https://playwright.dev/) and [Vitest](https://vitest.dev/) for checks
+
+See [the validation notes](docs/model-validation.md) for why the visual detector and score were retired, and [third-party notices](docs/third-party-notices.md) for attribution.

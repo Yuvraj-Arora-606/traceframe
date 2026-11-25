@@ -23,7 +23,7 @@ app.innerHTML = `
           <p class="drop-hint">or drop an image here</p>
         </div>
         <div class="preview-state" id="preview-state" hidden>
-          <img id="preview-image" alt="Local preview of the selected image">
+          <div class="preview-frame"><img id="preview-image" alt="Local preview of the selected image"><div class="scan-overlay" aria-hidden="true"><span class="scan-grid"></span><span class="scan-sweep"></span><i></i><i></i><i></i><i></i><i></i><i></i></div><span class="scan-label" aria-hidden="true">Reading image record</span></div>
           <div class="file-meta"><div><strong id="file-name"></strong><span id="file-details"></span></div><button id="remove-button" class="icon-button" type="button" aria-label="Remove selected image">×</button></div>
         </div>
         <div class="notice" id="notice" role="status" aria-live="polite" hidden></div>
@@ -103,6 +103,7 @@ async function selectFile(file) {
 
 function clearImage(resetPane = true) {
   requestId++;
+  drop.classList.remove('is-scanning');
   selectedFile = null;
   if (objectUrl) URL.revokeObjectURL(objectUrl);
   objectUrl = null;
@@ -147,10 +148,11 @@ async function runAnalysis() {
 
   analyze.disabled = true;
   notice.hidden = true;
+  drop.classList.add('is-scanning');
   document.querySelector('#result-mark').textContent = '…';
   result.innerHTML = '<h2>Checking image records</h2><p>Looking for content credentials. This usually takes a moment.</p><div class="progress-track"><span class="indeterminate"></span></div>';
   try {
-    const provenance = await provenancePromise;
+    const [provenance] = await Promise.all([provenancePromise, new Promise((resolve) => setTimeout(resolve, 1100))]);
     if (myRequest !== requestId || selectedFile !== file) return;
     const isAiRecorded = provenance.status === 'found' && provenance.generated;
     const originCard = isAiRecorded
@@ -186,6 +188,7 @@ async function runAnalysis() {
     setEvidence('provenance-card', 'Check unavailable', 'The credential reader could not finish.');
     showNotice('The origin check could not finish. Try again or choose another image.');
   } finally {
+    drop.classList.remove('is-scanning');
     if (myRequest === requestId && selectedFile === file) analyze.disabled = false;
   }
 }
