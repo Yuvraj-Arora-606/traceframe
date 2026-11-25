@@ -1,6 +1,6 @@
-# Still / Signal
+# Traceframe
 
-Still / Signal checks an image for Content Credentials that record how it was created or edited, and shows basic file details. It does not guess whether an image without a credential is real or AI-generated.
+Traceframe checks an image for Content Credentials that record how it was created or edited, and shows basic file details. It does not guess whether an image without a credential is real or AI-generated.
 
 ## Run locally
 
@@ -27,7 +27,7 @@ The browser smoke test uses Chrome and writes its report and screenshot under th
 - **Origin unknown:** no usable AI-generation record was found. This does not prove the image is camera-taken or authentic.
 - **Credential failed validation / check unavailable:** the recorded claim could not be relied on or the app could not read it.
 
-The exploratory image maps are educational views only. Still / Signal does not provide a visual AI detector or an authenticity score because the tested classifier did not reliably separate known AI and camera images.
+The exploratory image maps are educational views only. Traceframe does not provide a visual AI detector or an authenticity score because the tested classifier did not reliably separate known AI and camera images.
 
 The app has no analytics, accounts, cookies, persistence, API route, or image-upload endpoint. Credential parsing and image maps run in the browser. The C2PA WASM runtime is bundled with the static app.
 

@@ -5,10 +5,10 @@ import { makeForensicVisuals } from './forensic-visuals.js';
 
 const app = document.querySelector('#app');
 app.innerHTML = `
-  <header class="topbar"><a class="brand" href="#" aria-label="Still / Signal home"><span class="brand-mark" aria-hidden="true">s<span>/</span>s</span><span>Still / Signal</span></a><span class="privacy-pill"><span aria-hidden="true"></span>Private by design</span></header>
+  <header class="topbar"><a class="brand" href="#" aria-label="Traceframe home"><span class="brand-mark" aria-hidden="true">s<span>/</span>s</span><span>Traceframe</span></a><span class="privacy-pill"><span aria-hidden="true"></span>Private by design</span></header>
   <main>
     <section class="intro" aria-labelledby="page-title">
-      <p class="overline">A first look, not a final answer</p>
+      <p class="overline">Evidence for image origin</p>
       <h1 id="page-title">Where did this image<br class="desktop-break"> come from?</h1>
       <p class="lede">Check for recorded image origins and file details. Missing records cannot tell you whether an image is real or AI-generated.</p>
     </section>
@@ -55,7 +55,7 @@ app.innerHTML = `
     </section>
     <p class="disclaimer">Content credentials can provide useful origin information, but this check is not forensic proof. Review the signer and recorded history before relying on a claim.</p>
   </main>
-  <footer><span>Still / Signal</span><span>Experimental browser prototype</span></footer>
+  <footer><span>Traceframe</span><span>Image origin checker</span></footer>
 `;
 
 const input = document.querySelector('#file-input');
