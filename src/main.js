@@ -1,6 +1,7 @@
 import './style.css';
-import { MODEL_CONFIG } from './model-config.js';
-import { validateImage, classifySignal } from './validation.js';
+import { validateImage } from './validation.js';
+import { inspectProvenance } from './provenance.js';
+import { makeForensicVisuals } from './forensic-visuals.js';
 
 const app = document.querySelector('#app');
 app.innerHTML = `
@@ -9,7 +10,7 @@ app.innerHTML = `
     <section class="intro" aria-labelledby="page-title">
       <p class="overline">A first look, not a final answer</p>
       <h1 id="page-title">Where did this image<br class="desktop-break"> come from?</h1>
-      <p class="lede">A local image check can offer a clue. It cannot tell you who made an image or prove what happened.</p>
+      <p class="lede">Check for recorded image origins and file details. Missing records cannot tell you whether an image is real or AI-generated.</p>
     </section>
     <section class="workspace" aria-label="Image checker">
       <div class="upload-pane" id="drop-zone">
@@ -35,12 +36,24 @@ app.innerHTML = `
         <div class="result-foot"><span class="tiny-lock" aria-hidden="true">◈</span><span>Your image is never uploaded by this app.</span></div>
       </aside>
     </section>
-    <section class="how" aria-label="How this check works">
-      <div><span class="how-icon" aria-hidden="true">01</span><h2>A model signal</h2><p>The classifier compares visual patterns with ones it learned during training.</p></div>
-      <div><span class="how-icon" aria-hidden="true">02</span><h2>Processed here</h2><p>The model downloads from Hugging Face on first use. Your image stays on your device.</p></div>
-      <div><span class="how-icon" aria-hidden="true">03</span><h2>Room for doubt</h2><p>Compression, edits, or unfamiliar image sources can change the result. Detectors can be wrong.</p></div>
+    <section class="evidence" id="evidence" aria-labelledby="evidence-title" hidden>
+      <div class="evidence-heading"><div><h2 id="evidence-title">Evidence checks</h2><p>Each check answers a different question. None can prove an image is truthful.</p></div><span class="local-tag">Runs in this browser</span></div>
+      <div class="evidence-grid">
+        <article class="evidence-card" id="provenance-card"><span class="evidence-icon">P</span><div><h3>Content credentials</h3><p class="evidence-status">Waiting to inspect</p><p class="evidence-detail">Recorded origin and edit history, when present.</p></div></article>
+        <article class="evidence-card" id="metadata-card"><span class="evidence-icon">M</span><div><h3>File information</h3><p class="evidence-status">Waiting to inspect</p><p class="evidence-detail">Basic format and dimensions; metadata can be edited or removed.</p></div></article>
+      </div>
+      <p class="evidence-note">No credential found does not mean an image is real. This checker reports available evidence; it does not guess when evidence is missing.</p>
+      <div class="visual-lab" id="visual-lab" hidden>
+        <div class="visual-lab-heading"><h3>Image signal maps</h3><p>Exploratory views of compression, fine detail, frequency, and color. These are not AI scores and do not affect the result.</p></div>
+        <div class="visual-grid" id="visual-grid"></div>
+      </div>
     </section>
-    <p class="disclaimer">This is an experimental classifier, not forensic evidence. Don't rely on it alone to make decisions about an image.</p>
+    <section class="how" aria-label="How this check works">
+      <div><span class="how-icon" aria-hidden="true">01</span><h2>Check the record</h2><p>Some images carry content credentials that record how they were made or edited.</p></div>
+      <div><span class="how-icon" aria-hidden="true">02</span><h2>Processed here</h2><p>Your image stays in this browser while credentials and file details are checked.</p></div>
+      <div><span class="how-icon" aria-hidden="true">03</span><h2>Missing means unknown</h2><p>Records can be removed or absent. This checker will not call an unverified image real.</p></div>
+    </section>
+    <p class="disclaimer">Content credentials can provide useful origin information, but this check is not forensic proof. Review the signer and recorded history before relying on a claim.</p>
   </main>
   <footer><span>Still / Signal</span><span>Experimental browser prototype</span></footer>
 `;
@@ -55,7 +68,6 @@ const analyze = document.querySelector('#analyze-button');
 const result = document.querySelector('#result-content');
 let selectedFile = null;
 let objectUrl = null;
-let classifierPromise = null;
 let requestId = 0;
 
 document.querySelector('#choose-button').addEventListener('click', () => input.click());
@@ -69,6 +81,7 @@ drop.addEventListener('drop', (e) => { const file = e.dataTransfer?.files?.[0]; 
 
 async function selectFile(file) {
   clearImage(false);
+  document.querySelector('#evidence').hidden = true;
   notice.hidden = true;
   try {
     const details = await validateImage(file);
@@ -82,7 +95,7 @@ async function selectFile(file) {
     analyze.disabled = false;
     document.querySelector('#another-button').hidden = true;
     document.querySelector('#result-mark').textContent = '—';
-    result.innerHTML = '<h2>Ready when you are</h2><p>The image is selected locally. Start a check to load the model and inspect it in your browser.</p>';
+    result.innerHTML = '<h2>Ready when you are</h2><p>Check this file for content credentials and basic image details. The image stays on your device.</p>';
   } catch (error) {
     showNotice(error.message);
   }
@@ -109,93 +122,80 @@ async function runAnalysis() {
   if (!selectedFile) return;
   const file = selectedFile;
   const myRequest = ++requestId;
+  document.querySelector('#evidence').hidden = false;
+  setEvidence('provenance-card', 'Checking credentials…', 'Reading recorded provenance from the selected file.');
+  setEvidence('metadata-card', 'Image details available', 'Dimensions and file format are shown with the preview.');
+
+  const provenancePromise = inspectProvenance(file).catch(() => ({ status: 'unavailable' }));
+  const visualLab = document.querySelector('#visual-lab');
+  visualLab.hidden = false;
+  document.querySelector('#visual-grid').innerHTML = '<p class="visual-loading">Preparing four local image maps…</p>';
+  makeForensicVisuals(file).then((maps) => {
+    if (myRequest !== requestId || selectedFile !== file) return;
+    const views = [
+      ['ela', 'Compression difference', 'Highlights pixel changes after a JPEG re-save; compression history affects this view.'],
+      ['noise', 'High-pass detail', 'Shows fine local edges and texture after neighboring pixels are removed.'],
+      ['fft', 'Frequency spectrum', 'A centered view of broad and fine spatial frequencies in the image.'],
+      ['color', 'Color variation', 'Visualizes local color saturation; subject matter strongly affects it.'],
+    ];
+    document.querySelector('#visual-grid').innerHTML = views.map(([key, title, detail]) => `<article class="visual-card"><img src="${maps[key]}" alt="${title} map for the selected image"><div><h4>${title}</h4><p>${detail}</p></div></article>`).join('');
+  }).catch((error) => {
+    if (myRequest !== requestId) return;
+    console.warn('Exploratory image maps could not be prepared.', error);
+    document.querySelector('#visual-grid').innerHTML = '<p class="visual-loading">Image maps are unavailable in this browser.</p>';
+  });
+
   analyze.disabled = true;
   notice.hidden = true;
   document.querySelector('#result-mark').textContent = '…';
-  result.innerHTML = '<h2>Preparing the model</h2><p>The first download can take a little while. The image itself remains on this device.</p><div class="progress-track"><span></span></div><p class="model-status" id="model-status">Connecting to the model host…</p>';
+  result.innerHTML = '<h2>Checking image records</h2><p>Looking for content credentials. This usually takes a moment.</p><div class="progress-track"><span class="indeterminate"></span></div>';
   try {
-    const { model, processor, backend } = await loadClassifier((event) => {
-      if (myRequest !== requestId) return;
-      const label = event.status === 'progress' ? `Downloading model files · ${formatSize(event.loaded ?? 0)} received` : event.status === 'done' ? 'Model file ready' : event.file ?? 'Preparing model files…';
-      const status = document.querySelector('#model-status');
-      if (status) status.textContent = label;
-      if (event.status === 'progress' && event.total) {
-        const bar = document.querySelector('.progress-track span');
-        if (bar) bar.style.width = `${Math.min(100, (event.loaded / event.total) * 100)}%`;
-      }
-    });
+    const provenance = await provenancePromise;
     if (myRequest !== requestId || selectedFile !== file) return;
-    document.querySelector('#result-mark').textContent = '…';
-    result.innerHTML = '<h2>Reading the image</h2><p>Comparing the image with patterns learned by the classifier.</p><div class="progress-track"><span class="indeterminate"></span></div>';
-    const started = performance.now();
-    const { RawImage } = await import('@huggingface/transformers');
-    const image = await RawImage.fromBlob(file);
-    const { pixel_values } = await processor(image);
-    const output = await model({ pixel_values });
-    const rawLogit = Number(output.logits?.data?.[0]);
-    const signal = classifySignal(rawLogit);
-    if (myRequest !== requestId || selectedFile !== file) return;
-    console.info('Image authenticity model output', output, 'logit', rawLogit, 'inference_ms', Math.round(performance.now() - started));
-    const copy = {
-      'ai-like': ['AI-like signal', 'The detector found patterns its model associates with generated images. This is a model signal, not proof of how the image was made.'],
-      'camera-like': ['Camera-like signal', 'The detector found fewer patterns it associates with generated images. This does not confirm the image came from a camera.'],
-      inconclusive: ['Inconclusive', 'The model did not return a usable signal for this image. Try another image or investigate its source another way.'],
-    }[signal];
-    result.innerHTML = `<h2>${copy[0]}</h2><p>${copy[1]}</p><p class="signal-detail">Experimental threshold · ${backend} · results are not validated or calibrated.</p>`;
-    document.querySelector('#result-mark').textContent = signal === 'ai-like' ? 'A' : signal === 'camera-like' ? 'C' : '…';
+    const isAiRecorded = provenance.status === 'found' && provenance.generated;
+    const originCard = isAiRecorded
+      ? `<div class="origin-verdict origin-ai"><span>CONTENT CREDENTIALS</span><strong>AI origin recorded</strong><p>This image’s content credentials record AI generation${provenance.generator ? ` · Generator listed: ${escapeHtml(provenance.generator)}` : ''}.</p></div>`
+      : provenance.status === 'absent'
+        ? '<div class="origin-verdict origin-unknown"><span>CONTENT CREDENTIALS</span><strong>Origin unknown</strong><p>No origin record was found. That does not tell us whether this image is real or AI-generated.</p></div>'
+        : provenance.status === 'invalid'
+          ? '<div class="origin-verdict origin-warning"><span>CONTENT CREDENTIALS</span><strong>Credential failed validation</strong><p>A record was found, but its integrity check reported a problem. Do not rely on its origin claim.</p></div>'
+          : provenance.status === 'found'
+            ? '<div class="origin-verdict origin-unknown"><span>CONTENT CREDENTIALS</span><strong>Credential found</strong><p>It does not explicitly record AI generation. Check its signer and history before relying on it.</p></div>'
+            : '<div class="origin-verdict origin-unknown"><span>CONTENT CREDENTIALS</span><strong>Origin check unavailable</strong><p>This app could not read a content credential, so the image origin remains unknown.</p></div>';
+    result.innerHTML = originCard;
+    document.querySelector('#result-mark').textContent = isAiRecorded ? 'AI' : '?';
     document.querySelector('#another-button').hidden = false;
+
+    if (isAiRecorded) {
+      setEvidence('provenance-card', 'AI generation recorded', provenance.generator ? `The credential lists ${provenance.generator} as its generator. Review its signer and history.` : 'The file contains a content credential that records AI generation.');
+    } else if (provenance.status === 'invalid') {
+      setEvidence('provenance-card', 'Credential failed validation', 'A record was present, but its integrity check reported a problem.');
+    } else if (provenance.status === 'absent') {
+      setEvidence('provenance-card', 'No credential found', 'Credentials can be absent or removed. This says nothing by itself about whether the image is real.');
+    } else if (provenance.status === 'found') {
+      setEvidence('provenance-card', 'Credential found', 'This credential does not explicitly record AI generation. Check its signer and history.');
+    } else {
+      setEvidence('provenance-card', 'Check unavailable', 'This file could not be checked for content credentials.');
+    }
   } catch (error) {
     if (myRequest !== requestId || selectedFile !== file) return;
     console.error(error);
-    result.innerHTML = '<h2>The check could not finish</h2><p>The model may be unavailable or this browser may not have enough resources. Your image remains selected and has not been uploaded.</p>';
+    result.innerHTML = '<div class="origin-verdict origin-warning"><span>CONTENT CREDENTIALS</span><strong>Origin check unavailable</strong><p>This app could not inspect the file. Try again or choose another image.</p></div>';
     document.querySelector('#result-mark').textContent = '!';
     document.querySelector('#another-button').hidden = false;
-    showNotice('Try again when you have a stable connection, or choose another image.');
+    setEvidence('provenance-card', 'Check unavailable', 'The credential reader could not finish.');
+    showNotice('The origin check could not finish. Try again or choose another image.');
   } finally {
     if (myRequest === requestId && selectedFile === file) analyze.disabled = false;
   }
 }
 
-function loadClassifier(progress_callback) {
-  if (!classifierPromise) {
-    classifierPromise = import('@huggingface/transformers').then(async ({ AutoModelForImageClassification, AutoProcessor, env }) => {
-      env.allowLocalModels = false;
-      const options = {
-        revision: MODEL_CONFIG.revision,
-        dtype: MODEL_CONFIG.dtype,
-        progress_callback,
-      };
-      env.remoteHost = MODEL_CONFIG.remoteHost;
-      const create = async (device) => {
-        const [model, processor] = await Promise.all([
-          AutoModelForImageClassification.from_pretrained(MODEL_CONFIG.id, { ...options, device }),
-          AutoProcessor.from_pretrained(MODEL_CONFIG.id, options),
-        ]);
-        // The pinned processor config omits do_center_crop even though it declares
-        // crop_size=384 and the ONNX model's positional embedding requires 384×384.
-        processor.image_processor.do_center_crop = true;
-        return { model, processor, backend: device === 'webgpu' ? 'WebGPU' : 'WASM' };
-      };
-      let preferredDevice = 'wasm';
-      if (navigator.gpu) {
-        try {
-          if (await navigator.gpu.requestAdapter()) preferredDevice = 'webgpu';
-        } catch {
-          // Some browsers expose navigator.gpu but cannot provide an adapter.
-        }
-      }
-      return create(preferredDevice)
-        .catch((error) => {
-          if (preferredDevice !== 'webgpu') throw error;
-          console.warn('WebGPU initialization failed; retrying with WASM.', error);
-          const status = document.querySelector('#model-status');
-          if (status) status.textContent = 'GPU acceleration is unavailable here. Switching to the compatible browser runtime…';
-          return create('wasm');
-        });
-    }).catch((error) => { classifierPromise = null; throw error; });
-  }
-  return classifierPromise;
-}
-
 function showNotice(message) { notice.textContent = message; notice.hidden = false; }
+function setEvidence(id, title, detail) {
+  const card = document.getElementById(id);
+  if (!card) return;
+  card.querySelector('.evidence-status').textContent = title;
+  card.querySelector('.evidence-detail').textContent = detail;
+}
 function formatSize(bytes) { return bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`; }
+function escapeHtml(value) { return String(value).replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]); }

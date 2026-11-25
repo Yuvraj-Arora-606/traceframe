@@ -1,5 +1,3 @@
-import { MODEL_CONFIG } from './model-config.js';
-
 export const MAX_BYTES = 15 * 1024 * 1024;
 export const MAX_PIXELS = 25_000_000;
 
@@ -24,10 +22,3 @@ export async function validateImage(file) {
   return { mime, width, height };
 }
 
-export function classifySignal(output) {
-  if (typeof output !== 'number' || !Number.isFinite(output) || output === 0) return 'inconclusive';
-  // Binary BCE classifier boundary: logit 0 maps to the default 0.5 decision boundary.
-  // The neutral band is an experimental abstention margin, not a validated operating point.
-  if (Math.abs(output) <= MODEL_CONFIG.inconclusiveMargin) return 'inconclusive';
-  return output > 0 ? 'ai-like' : 'camera-like';
-}

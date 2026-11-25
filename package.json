@@ -14,7 +14,7 @@
     "test:phase0": "node scripts/phase0-smoke.mjs"
   },
   "dependencies": {
-    "@huggingface/transformers": "4.3.2"
+    "@contentauth/c2pa-web": "^0.17.2"
   },
   "devDependencies": {
     "@playwright/test": "1.58.2",

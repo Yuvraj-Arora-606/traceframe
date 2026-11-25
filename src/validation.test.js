@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { identifyImage, MAX_BYTES, MAX_PIXELS, classifySignal, validateImage } from './validation.js';
+import { identifyImage, MAX_BYTES, MAX_PIXELS, validateImage } from './validation.js';
 
 describe('image validation primitives', () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -24,16 +24,5 @@ describe('image validation primitives', () => {
     const pngHeader = Uint8Array.from([137, 80, 78, 71, 13, 10, 26, 10]);
     const oversizedDimensions = new File([pngHeader], 'large.png', { type: 'image/png' });
     await expect(validateImage(oversizedDimensions)).rejects.toThrow('larger than 25 megapixels');
-  });
-  it('maps the single raw logit without presenting it as a probability', () => {
-    expect(classifySignal(2.4)).toBe('ai-like');
-    expect(classifySignal(-1.8)).toBe('camera-like');
-    expect(classifySignal(0)).toBe('inconclusive');
-    expect(classifySignal(0.1)).toBe('inconclusive');
-    expect(classifySignal(-0.1)).toBe('inconclusive');
-    expect(classifySignal(0.2)).toBe('inconclusive');
-    expect(classifySignal(-0.2)).toBe('inconclusive');
-    expect(classifySignal(Number.NaN)).toBe('inconclusive');
-    expect(classifySignal(null)).toBe('inconclusive');
   });
 });
