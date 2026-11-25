@@ -2,6 +2,7 @@ import './style.css';
 import { validateImage } from './validation.js';
 import { inspectProvenance } from './provenance.js';
 import { makeForensicVisuals } from './forensic-visuals.js';
+import { inspectImageMetadata } from './image-metadata.js';
 
 const app = document.querySelector('#app');
 app.innerHTML = `
@@ -23,7 +24,7 @@ app.innerHTML = `
           <p class="drop-hint">or drop an image here</p>
         </div>
         <div class="preview-state" id="preview-state" hidden>
-          <div class="preview-frame"><img id="preview-image" alt="Local preview of the selected image"><div class="scan-overlay" aria-hidden="true"><span class="scan-grid"></span><span class="scan-sweep"></span><i></i><i></i><i></i><i></i><i></i><i></i></div><span class="scan-label" aria-hidden="true">Reading image record</span></div>
+          <div class="preview-frame"><img id="preview-image" alt="Local preview of the selected image"><div class="scan-overlay" aria-hidden="true"><span class="scan-grid"></span><span class="scan-sweep"></span><i></i><i></i><i></i><i></i><i></i><i></i></div><span class="scan-label" aria-hidden="true">Reading image records</span></div>
           <div class="file-meta"><div><strong id="file-name"></strong><span id="file-details"></span></div><button id="remove-button" class="icon-button" type="button" aria-label="Remove selected image">×</button></div>
         </div>
         <div class="notice" id="notice" role="status" aria-live="polite" hidden></div>
@@ -41,8 +42,9 @@ app.innerHTML = `
       <div class="evidence-grid">
         <article class="evidence-card" id="provenance-card"><span class="evidence-icon">P</span><div><h3>Content credentials</h3><p class="evidence-status">Waiting to inspect</p><p class="evidence-detail">Recorded origin and edit history, when present.</p></div></article>
         <article class="evidence-card" id="metadata-card"><span class="evidence-icon">M</span><div><h3>File information</h3><p class="evidence-status">Waiting to inspect</p><p class="evidence-detail">Basic format and dimensions; metadata can be edited or removed.</p></div></article>
+        <article class="evidence-card" id="metadata-clue-card"><span class="evidence-icon">I</span><div><h3>Image metadata</h3><p class="evidence-status">Waiting to inspect</p><p class="evidence-detail">AI-tool tags or camera details, if saved with the file.</p></div></article>
       </div>
-      <p class="evidence-note">No credential found does not mean an image is real. This checker reports available evidence; it does not guess when evidence is missing.</p>
+      <p class="evidence-note">No AI label found does not prove an image is original. Some AI-made images have no label.</p>
       <div class="visual-lab" id="visual-lab" hidden>
         <div class="visual-lab-heading"><h3>Image signal maps</h3><p>Exploratory views of compression, fine detail, frequency, and color. These are not AI scores and do not affect the result.</p></div>
         <div class="visual-grid" id="visual-grid"></div>
@@ -51,7 +53,7 @@ app.innerHTML = `
     <section class="how" aria-label="How this check works">
       <div><span class="how-icon" aria-hidden="true">01</span><h2>Check the record</h2><p>Some images carry content credentials that record how they were made or edited.</p></div>
       <div><span class="how-icon" aria-hidden="true">02</span><h2>Processed here</h2><p>Your image stays in this browser while credentials and file details are checked.</p></div>
-      <div><span class="how-icon" aria-hidden="true">03</span><h2>Missing means unknown</h2><p>Records can be removed or absent. This checker will not call an unverified image real.</p></div>
+      <div><span class="how-icon" aria-hidden="true">03</span><h2>No AI label found</h2><p>Some AI-made images have no label, so this result cannot confirm an image is original.</p></div>
     </section>
     <p class="disclaimer">Content credentials can provide useful origin information, but this check is not forensic proof. Review the signer and recorded history before relying on a claim.</p>
   </main>
@@ -95,7 +97,7 @@ async function selectFile(file) {
     analyze.disabled = false;
     document.querySelector('#another-button').hidden = true;
     document.querySelector('#result-mark').textContent = '—';
-    result.innerHTML = '<h2>Ready when you are</h2><p>Check this file for content credentials and basic image details. The image stays on your device.</p>';
+    result.innerHTML = '<h2>Ready when you are</h2><p>Check this file for content credentials and metadata. The image stays on your device.</p>';
   } catch (error) {
     showNotice(error.message);
   }
@@ -126,8 +128,10 @@ async function runAnalysis() {
   document.querySelector('#evidence').hidden = false;
   setEvidence('provenance-card', 'Checking credentials…', 'Reading recorded provenance from the selected file.');
   setEvidence('metadata-card', 'Image details available', 'Dimensions and file format are shown with the preview.');
+  setEvidence('metadata-clue-card', 'Reading image metadata…', 'Checking for AI-tool tags and camera details saved in the file.');
 
   const provenancePromise = inspectProvenance(file).catch(() => ({ status: 'unavailable' }));
+  const imageMetadataPromise = inspectImageMetadata(file).catch(() => ({ status: 'unavailable', aiHints: [], cameraDetails: [], metadataCount: 0 }));
   const visualLab = document.querySelector('#visual-lab');
   visualLab.hidden = false;
   document.querySelector('#visual-grid').innerHTML = '<p class="visual-loading">Preparing four local image maps…</p>';
@@ -150,22 +154,28 @@ async function runAnalysis() {
   notice.hidden = true;
   drop.classList.add('is-scanning');
   document.querySelector('#result-mark').textContent = '…';
-  result.innerHTML = '<h2>Checking image records</h2><p>Looking for content credentials. This usually takes a moment.</p><div class="progress-track"><span class="indeterminate"></span></div>';
+  result.innerHTML = '<h2>Checking image records</h2><p>Looking for content credentials and metadata. This usually takes a moment.</p><div class="progress-track"><span class="indeterminate"></span></div>';
   try {
-    const [provenance] = await Promise.all([provenancePromise, new Promise((resolve) => setTimeout(resolve, 1100))]);
+    const [provenance, imageMetadata] = await Promise.all([provenancePromise, imageMetadataPromise, new Promise((resolve) => setTimeout(resolve, 1100))]);
     if (myRequest !== requestId || selectedFile !== file) return;
     const isAiRecorded = provenance.status === 'found' && provenance.generated;
+    const hasAiMetadataHint = imageMetadata.aiHints?.length > 0;
+    const hasCameraDetails = imageMetadata.cameraDetails?.length > 0;
     const originCard = isAiRecorded
       ? `<div class="origin-verdict origin-ai"><span>CONTENT CREDENTIALS</span><strong>AI origin recorded</strong><p>This image’s content credentials record AI generation${provenance.generator ? ` · Generator listed: ${escapeHtml(provenance.generator)}` : ''}.</p></div>`
-      : provenance.status === 'absent'
-        ? '<div class="origin-verdict origin-unknown"><span>CONTENT CREDENTIALS</span><strong>Origin unknown</strong><p>No origin record was found. That does not tell us whether this image is real or AI-generated.</p></div>'
-        : provenance.status === 'invalid'
-          ? '<div class="origin-verdict origin-warning"><span>CONTENT CREDENTIALS</span><strong>Credential failed validation</strong><p>A record was found, but its integrity check reported a problem. Do not rely on its origin claim.</p></div>'
+      : provenance.status === 'invalid'
+        ? '<div class="origin-verdict origin-warning"><span>CONTENT CREDENTIALS</span><strong>Credential failed validation</strong><p>A record was found, but its integrity check reported a problem. Do not rely on its origin claim.</p></div>'
+        : hasAiMetadataHint
+          ? `<div class="origin-verdict origin-unknown"><span>IMAGE METADATA</span><strong>AI-tool tags found</strong><p>The file mentions ${escapeHtml(imageMetadata.aiHints.join(', '))}. These tags can be edited and do not verify who made the image.</p></div>`
           : provenance.status === 'found'
             ? '<div class="origin-verdict origin-unknown"><span>CONTENT CREDENTIALS</span><strong>Credential found</strong><p>It does not explicitly record AI generation. Check its signer and history before relying on it.</p></div>'
-            : '<div class="origin-verdict origin-unknown"><span>CONTENT CREDENTIALS</span><strong>Origin check unavailable</strong><p>This app could not read a content credential, so the image origin remains unknown.</p></div>';
+            : hasCameraDetails
+              ? `<div class="origin-verdict origin-unknown"><span>IMAGE METADATA</span><strong>Camera details found</strong><p>${escapeHtml(imageMetadata.cameraDetails.join(' · '))}. These details can be edited and do not prove the image is an untouched camera photo.</p></div>`
+              : provenance.status === 'absent'
+                ? '<div class="origin-verdict origin-unknown"><span>IMAGE RECORDS</span><strong>No AI label found</strong><p>This file has no AI-generation label. It may still be AI-made; labels can be missing or removed.</p></div>'
+                : '<div class="origin-verdict origin-unknown"><span>IMAGE RECORDS</span><strong>Origin check unavailable</strong><p>This app could not read the image records, so it cannot report an origin.</p></div>';
     result.innerHTML = originCard;
-    document.querySelector('#result-mark').textContent = isAiRecorded ? 'AI' : '?';
+    document.querySelector('#result-mark').textContent = isAiRecorded ? 'AI' : hasAiMetadataHint ? 'TAG' : hasCameraDetails ? 'CAM' : '?';
     document.querySelector('#another-button').hidden = false;
 
     if (isAiRecorded) {
@@ -173,11 +183,22 @@ async function runAnalysis() {
     } else if (provenance.status === 'invalid') {
       setEvidence('provenance-card', 'Credential failed validation', 'A record was present, but its integrity check reported a problem.');
     } else if (provenance.status === 'absent') {
-      setEvidence('provenance-card', 'No credential found', 'Credentials can be absent or removed. This says nothing by itself about whether the image is real.');
+      setEvidence('provenance-card', 'No AI label found', 'The file may still be AI-made; this check only reads labels saved with the image.');
     } else if (provenance.status === 'found') {
       setEvidence('provenance-card', 'Credential found', 'This credential does not explicitly record AI generation. Check its signer and history.');
     } else {
       setEvidence('provenance-card', 'Check unavailable', 'This file could not be checked for content credentials.');
+    }
+    if (imageMetadata.status === 'unavailable') {
+      setEvidence('metadata-clue-card', 'Metadata check unavailable', 'This browser could not read the image metadata.');
+    } else if (hasAiMetadataHint) {
+      setEvidence('metadata-clue-card', 'AI-tool tags found', `File metadata mentions ${imageMetadata.aiHints.join(', ')}. Tags can be edited or removed.`);
+    } else if (hasCameraDetails) {
+      setEvidence('metadata-clue-card', 'Camera details found', `${imageMetadata.cameraDetails.join(' · ')}. These details can be edited or removed.`);
+    } else if (imageMetadata.metadataCount) {
+      setEvidence('metadata-clue-card', 'Other metadata found', 'No recognized AI-tool tag or camera details were found. This does not tell us how the image was made.');
+    } else {
+      setEvidence('metadata-clue-card', 'No AI or camera details found', 'This file does not include identifying tags for those clues. That does not tell us how the image was made.');
     }
   } catch (error) {
     if (myRequest !== requestId || selectedFile !== file) return;

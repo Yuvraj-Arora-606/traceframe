@@ -6,3 +6,10 @@
 
 - Project: https://github.com/contentauth/c2pa-web
 - License: https://github.com/contentauth/c2pa-web/blob/main/LICENSE
+
+## Image metadata reader
+
+`exifreader` is distributed under the Mozilla Public License 2.0. It reads EXIF, XMP, IPTC, and supported image-format metadata locally in the browser.
+
+- Project: https://github.com/mattiasw/ExifReader
+- License: https://github.com/mattiasw/ExifReader/blob/main/LICENSE

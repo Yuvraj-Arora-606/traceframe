@@ -14,7 +14,8 @@
     "test:phase0": "node scripts/phase0-smoke.mjs"
   },
   "dependencies": {
-    "@contentauth/c2pa-web": "^0.17.2"
+    "@contentauth/c2pa-web": "^0.17.2",
+    "exifreader": "^4.55.1"
   },
   "devDependencies": {
     "@playwright/test": "1.58.2",

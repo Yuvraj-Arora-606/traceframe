@@ -44,16 +44,18 @@ const scanAnimation = await page.waitForFunction(() => {
   return overlay && getComputedStyle(overlay).display !== 'none' && sweep && getComputedStyle(sweep).animationName === 'scanPass';
 }, null, { timeout: 3_000 }).then(() => true).catch(() => false);
 if (!scanAnimation) throw new Error('The image scan animation did not start.');
-await page.waitForFunction(() => /AI origin recorded|Origin unknown|Credential failed validation|Credential found|Origin check unavailable/.test(document.querySelector('#result-content')?.innerText ?? ''), null, { timeout: 30_000 });
+await page.waitForFunction(() => /AI origin recorded|AI-tool tags found|Camera details found|No AI label found|Credential failed validation|Credential found|Origin check unavailable/.test(document.querySelector('#result-content')?.innerText ?? ''), null, { timeout: 30_000 });
 if (await page.locator('#drop-zone').evaluate((element) => element.classList.contains('is-scanning'))) throw new Error('The scan animation remained active after the result appeared.');
 const resultText = await page.locator('#result-content').innerText();
 if (/\b\d+\s*\/\s*100\b|Visual model signal|role="meter"/.test(resultText)) throw new Error('A numeric visual score is still being shown.');
 if (process.env.IMAGE_PROVENANCE === 'ai-generated' && !resultText.includes('AI origin recorded')) throw new Error('Known AI origin was not surfaced in the main result.');
-if (process.env.IMAGE_PROVENANCE === 'camera-photo' && !resultText.includes('Origin unknown')) throw new Error('Image without credentials was not shown as unknown origin.');
+if (process.env.IMAGE_PROVENANCE === 'camera-photo' && !resultText.includes('No AI label found')) throw new Error('Image without AI-origin metadata was not shown as unconfirmed.');
 await page.waitForFunction(() => document.querySelectorAll('.visual-card img').length === 4 || document.querySelector('#visual-grid')?.innerText.includes('unavailable'), null, { timeout: 15_000 });
 if (await page.locator('.visual-card img').count() !== 4) throw new Error('The four exploratory image maps were not rendered.');
 await page.waitForFunction(() => !document.querySelector('#provenance-card .evidence-status')?.innerText.includes('Checking credentials'), null, { timeout: 5_000 });
 const provenanceEvidence = await page.locator('#provenance-card').innerText();
+await page.waitForFunction(() => !document.querySelector('#metadata-clue-card .evidence-status')?.innerText.includes('Reading image metadata'), null, { timeout: 5_000 });
+const metadataEvidence = await page.locator('#metadata-clue-card').innerText();
 const elapsedToResultMs = Date.now() - started;
 await mkdir('artifacts', { recursive: true });
 await page.screenshot({ path: 'artifacts/phase0-result.png', fullPage: true });
@@ -85,6 +87,7 @@ const report = {
   image: { name: file.name, bytes: selectedBytes.byteLength, generatedLocally: !imagePath, expectedOrigin: process.env.IMAGE_PROVENANCE ?? null },
   outcome: resultText,
   provenanceEvidence,
+  metadataEvidence,
   elapsedToResultMs,
   externalRequestsWithPayload: externalPosts,
   appImageUploadVerified: true,
