@@ -5,12 +5,12 @@ import { makeForensicVisuals } from './forensic-visuals.js';
 
 const app = document.querySelector('#app');
 app.innerHTML = `
-  <header class="topbar"><a class="brand" href="#" aria-label="Traceframe home"><span class="brand-mark" aria-hidden="true">TF</span><span>Traceframe</span></a><span class="privacy-pill"><span aria-hidden="true"></span>Private by design</span></header>
+  <header class="topbar"><a class="brand" href="#" aria-label="Traceframe home"><span class="brand-mark" aria-hidden="true">TF</span><span>Traceframe</span></a><span class="privacy-pill"><span aria-hidden="true"></span>Visual scan by Groq</span></header>
   <main>
     <section class="intro" aria-labelledby="page-title">
       <p class="overline">Evidence for image origin</p>
       <h1 id="page-title">A clearer picture<br class="desktop-break"> of image origin.</h1>
-      <p class="lede">Check for recorded image origins and file details. Missing records cannot tell you whether an image is real or AI-generated.</p>
+      <p class="lede">Check image credentials, then ask a vision model to inspect the image itself. Its visual assessment is a clue, not proof.</p>
     </section>
     <section class="workspace" aria-label="Image checker">
       <div class="upload-pane" id="drop-zone">
@@ -33,16 +33,17 @@ app.innerHTML = `
         <div id="result-content" class="result-content"><h2>Waiting for an image</h2><p>Choose an image to begin. It stays in this browser while the check runs.</p></div>
         <button class="button button-dark" id="analyze-button" type="button" disabled>Check this image</button>
         <button class="text-button" id="another-button" type="button" hidden>Check another image</button>
-        <div class="result-foot"><span class="tiny-lock" aria-hidden="true">◈</span><span>Your image is never uploaded by this app.</span></div>
+        <div class="result-foot"><span class="tiny-lock" aria-hidden="true">◈</span><span>With your scan, a resized image is sent to Groq.</span></div>
       </aside>
     </section>
     <section class="evidence" id="evidence" aria-labelledby="evidence-title" hidden>
       <div class="evidence-heading"><div><h2 id="evidence-title">Evidence checks</h2><p>Each check answers a different question. None can prove an image is truthful.</p></div><span class="local-tag">Runs in this browser</span></div>
       <div class="evidence-grid">
         <article class="evidence-card" id="provenance-card"><span class="evidence-icon">P</span><div><h3>Content credentials</h3><p class="evidence-status">Waiting to inspect</p><p class="evidence-detail">Recorded origin and edit history, when present.</p></div></article>
+        <article class="evidence-card" id="groq-card"><span class="evidence-icon">G</span><div><h3>Groq visual review</h3><p class="evidence-status">Waiting to scan</p><p class="evidence-detail">Looks for visible cues in the image pixels.</p></div></article>
         <article class="evidence-card" id="metadata-card"><span class="evidence-icon">M</span><div><h3>File information</h3><p class="evidence-status">Waiting to inspect</p><p class="evidence-detail">Basic format and dimensions; metadata can be edited or removed.</p></div></article>
       </div>
-      <p class="evidence-note">No credential found does not mean an image is real. This checker reports available evidence; it does not guess when evidence is missing.</p>
+      <p class="evidence-note">The selected image is resized and sent to Groq for visual analysis. Groq says inference data is not retained by default, but temporary reliability or abuse logs may retain it for up to 30 days. A missing credential or a model opinion does not prove an image is real.</p>
       <div class="visual-lab" id="visual-lab" hidden>
         <div class="visual-lab-heading"><h3>Image signal maps</h3><p>Exploratory views of compression, fine detail, frequency, and color. These are not AI scores and do not affect the result.</p></div>
         <div class="visual-grid" id="visual-grid"></div>
@@ -50,7 +51,7 @@ app.innerHTML = `
     </section>
     <section class="how" aria-label="How this check works">
       <div><span class="how-icon" aria-hidden="true">01</span><h2>Check the record</h2><p>Some images carry content credentials that record how they were made or edited.</p></div>
-      <div><span class="how-icon" aria-hidden="true">02</span><h2>Processed here</h2><p>Your image stays in this browser while credentials and file details are checked.</p></div>
+      <div><span class="how-icon" aria-hidden="true">02</span><h2>Visual review</h2><p>A resized copy is sent to Groq’s vision model. Your API key stays on the server.</p></div>
       <div><span class="how-icon" aria-hidden="true">03</span><h2>Missing means unknown</h2><p>Records can be removed or absent. This checker will not call an unverified image real.</p></div>
     </section>
     <p class="disclaimer">Content credentials can provide useful origin information, but this check is not forensic proof. Review the signer and recorded history before relying on a claim.</p>
@@ -125,9 +126,11 @@ async function runAnalysis() {
   const myRequest = ++requestId;
   document.querySelector('#evidence').hidden = false;
   setEvidence('provenance-card', 'Checking credentials…', 'Reading recorded provenance from the selected file.');
+  setEvidence('groq-card', 'Preparing visual scan…', 'A resized copy will be sent to Groq for its vision model to inspect.');
   setEvidence('metadata-card', 'Image details available', 'Dimensions and file format are shown with the preview.');
 
   const provenancePromise = inspectProvenance(file).catch(() => ({ status: 'unavailable' }));
+  const visualPromise = scanWithGroq(file);
   const visualLab = document.querySelector('#visual-lab');
   visualLab.hidden = false;
   document.querySelector('#visual-grid').innerHTML = '<p class="visual-loading">Preparing four local image maps…</p>';
@@ -150,23 +153,24 @@ async function runAnalysis() {
   notice.hidden = true;
   drop.classList.add('is-scanning');
   document.querySelector('#result-mark').textContent = '…';
-  result.innerHTML = '<h2>Checking image records</h2><p>Looking for content credentials. This usually takes a moment.</p><div class="progress-track"><span class="indeterminate"></span></div>';
+  result.innerHTML = '<h2>Reading the image</h2><p>Checking its content record and asking Groq’s vision model to inspect the pixels.</p><div class="progress-track"><span class="indeterminate"></span></div>';
   try {
-    const [provenance] = await Promise.all([provenancePromise, new Promise((resolve) => setTimeout(resolve, 1100))]);
+    const [provenance, visual] = await Promise.all([provenancePromise, visualPromise, new Promise((resolve) => setTimeout(resolve, 1100))]);
     if (myRequest !== requestId || selectedFile !== file) return;
     const isAiRecorded = provenance.status === 'found' && provenance.generated;
+    const visualTitle = visual.assessment === 'ai_like' ? 'Possible AI-like visual cues' : visual.assessment === 'no_clear_ai_cues' ? 'No clear AI-like cues spotted' : visual.error ? 'Visual scan unavailable' : 'Visual scan inconclusive';
+    const visualDetail = visual.error ? visual.error : `${(visual.observations ?? []).map(escapeHtml).join(' · ') || 'The model did not identify a clear visual cue.'} ${escapeHtml(visual.caveat ?? 'This is not proof of image origin.')}`;
     const originCard = isAiRecorded
       ? `<div class="origin-verdict origin-ai"><span>CONTENT CREDENTIALS</span><strong>AI origin recorded</strong><p>This image’s content credentials record AI generation${provenance.generator ? ` · Generator listed: ${escapeHtml(provenance.generator)}` : ''}.</p></div>`
-      : provenance.status === 'absent'
-        ? '<div class="origin-verdict origin-unknown"><span>CONTENT CREDENTIALS</span><strong>Origin unknown</strong><p>No origin record was found. That does not tell us whether this image is real or AI-generated.</p></div>'
-        : provenance.status === 'invalid'
-          ? '<div class="origin-verdict origin-warning"><span>CONTENT CREDENTIALS</span><strong>Credential failed validation</strong><p>A record was found, but its integrity check reported a problem. Do not rely on its origin claim.</p></div>'
-          : provenance.status === 'found'
-            ? '<div class="origin-verdict origin-unknown"><span>CONTENT CREDENTIALS</span><strong>Credential found</strong><p>It does not explicitly record AI generation. Check its signer and history before relying on it.</p></div>'
-            : '<div class="origin-verdict origin-unknown"><span>CONTENT CREDENTIALS</span><strong>Origin check unavailable</strong><p>This app could not read a content credential, so the image origin remains unknown.</p></div>';
-    result.innerHTML = originCard;
-    document.querySelector('#result-mark').textContent = isAiRecorded ? 'AI' : '?';
+      : `<div class="origin-verdict origin-unknown"><span>VISUAL REVIEW</span><strong>${visualTitle}</strong><p>${visualDetail}</p></div>`;
+    const secondaryVisual = isAiRecorded ? `<div class="visual-note"><strong>${visualTitle}</strong><p>${visualDetail}</p></div>` : '';
+    result.innerHTML = `${originCard}${secondaryVisual}`;
+    document.querySelector('#result-mark').textContent = isAiRecorded ? 'AI' : visual.assessment === 'ai_like' ? 'AI?' : '?';
     document.querySelector('#another-button').hidden = false;
+
+    const visualEvidenceTitle = visual.error ? 'Visual scan unavailable' : visualTitle;
+    const visualEvidenceDetail = visual.error ? visual.error : `${(visual.observations ?? []).map(escapeHtml).join(' · ') || 'No specific visual cue identified.'} ${escapeHtml(visual.caveat ?? 'Not proof of origin.')}`;
+    setEvidence('groq-card', visualEvidenceTitle, visualEvidenceDetail);
 
     if (isAiRecorded) {
       setEvidence('provenance-card', 'AI generation recorded', provenance.generator ? `The credential lists ${provenance.generator} as its generator. Review its signer and history.` : 'The file contains a content credential that records AI generation.');
@@ -182,7 +186,7 @@ async function runAnalysis() {
   } catch (error) {
     if (myRequest !== requestId || selectedFile !== file) return;
     console.error(error);
-    result.innerHTML = '<div class="origin-verdict origin-warning"><span>CONTENT CREDENTIALS</span><strong>Origin check unavailable</strong><p>This app could not inspect the file. Try again or choose another image.</p></div>';
+    result.innerHTML = '<div class="origin-verdict origin-warning"><span>IMAGE CHECK</span><strong>Scan could not finish</strong><p>Check the connection and Groq API key, then try again.</p></div>';
     document.querySelector('#result-mark').textContent = '!';
     document.querySelector('#another-button').hidden = false;
     setEvidence('provenance-card', 'Check unavailable', 'The credential reader could not finish.');
@@ -190,6 +194,25 @@ async function runAnalysis() {
   } finally {
     drop.classList.remove('is-scanning');
     if (myRequest === requestId && selectedFile === file) analyze.disabled = false;
+  }
+}
+
+async function scanWithGroq(file) {
+  try {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, 1536 / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    bitmap.close();
+    const image = canvas.toDataURL('image/jpeg', 0.86);
+    const response = await fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image }) });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) return { assessment: 'inconclusive', error: result.error ?? 'The visual scan could not finish.' };
+    return result;
+  } catch (error) {
+    return { assessment: 'inconclusive', error: error.message ?? 'The visual scan could not finish.' };
   }
 }
 

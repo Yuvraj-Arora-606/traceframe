@@ -44,16 +44,16 @@ const scanAnimation = await page.waitForFunction(() => {
   return overlay && getComputedStyle(overlay).display !== 'none' && sweep && getComputedStyle(sweep).animationName === 'scanPass';
 }, null, { timeout: 3_000 }).then(() => true).catch(() => false);
 if (!scanAnimation) throw new Error('The image scan animation did not start.');
-await page.waitForFunction(() => /AI origin recorded|Origin unknown|Credential failed validation|Credential found|Origin check unavailable/.test(document.querySelector('#result-content')?.innerText ?? ''), null, { timeout: 30_000 });
+await page.waitForFunction(() => /AI origin recorded|Possible AI-like visual cues|No clear AI-like cues spotted|Visual scan (?:inconclusive|unavailable)/.test(document.querySelector('#result-content')?.innerText ?? ''), null, { timeout: 30_000 });
 if (await page.locator('#drop-zone').evaluate((element) => element.classList.contains('is-scanning'))) throw new Error('The scan animation remained active after the result appeared.');
 const resultText = await page.locator('#result-content').innerText();
 if (/\b\d+\s*\/\s*100\b|Visual model signal|role="meter"/.test(resultText)) throw new Error('A numeric visual score is still being shown.');
 if (process.env.IMAGE_PROVENANCE === 'ai-generated' && !resultText.includes('AI origin recorded')) throw new Error('Known AI origin was not surfaced in the main result.');
-if (process.env.IMAGE_PROVENANCE === 'camera-photo' && !resultText.includes('Origin unknown')) throw new Error('Image without credentials was not shown as unknown origin.');
 await page.waitForFunction(() => document.querySelectorAll('.visual-card img').length === 4 || document.querySelector('#visual-grid')?.innerText.includes('unavailable'), null, { timeout: 15_000 });
 if (await page.locator('.visual-card img').count() !== 4) throw new Error('The four exploratory image maps were not rendered.');
 await page.waitForFunction(() => !document.querySelector('#provenance-card .evidence-status')?.innerText.includes('Checking credentials'), null, { timeout: 5_000 });
 const provenanceEvidence = await page.locator('#provenance-card').innerText();
+if (process.env.IMAGE_PROVENANCE === 'camera-photo' && !provenanceEvidence.includes('No credential found')) throw new Error('Image without credentials was not shown as unknown provenance.');
 const elapsedToResultMs = Date.now() - started;
 await mkdir('artifacts', { recursive: true });
 await page.screenshot({ path: 'artifacts/phase0-result.png', fullPage: true });
@@ -74,8 +74,8 @@ await page.locator('#file-input').setInputFiles({ name: 'corrupt.jpg', mimeType:
 await page.waitForFunction(() => document.querySelector('#notice')?.textContent.includes('could not be decoded'), null, { timeout: 5_000 });
 await page.locator('#file-input').setInputFiles({ name: 'oversized.png', mimeType: 'image/png', buffer: Buffer.alloc(15 * 1024 * 1024 + 1) });
 await page.waitForFunction(() => document.querySelector('#notice')?.textContent.includes('larger than 15 MB'), null, { timeout: 5_000 });
-const externalPosts = requests.filter((request) => request.method !== 'GET' && request.bodyBytes > 0);
-if (externalPosts.length || requests.some((request) => imagePath && request.url.includes(file.name))) throw new Error('The selected image was sent to an external service.');
+const externalPosts = requests.filter((request) => request.method !== 'GET' && request.bodyBytes > 0 && request.url.startsWith('http') && new URL(request.url).origin !== new URL(baseUrl).origin);
+if (externalPosts.length) throw new Error('The browser sent an image directly to an external service instead of the same-origin server endpoint.');
 const report = {
   date: `${new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' })} Asia/Kolkata`,
   browser: await page.evaluate(() => navigator.userAgent),
@@ -86,8 +86,8 @@ const report = {
   outcome: resultText,
   provenanceEvidence,
   elapsedToResultMs,
-  externalRequestsWithPayload: externalPosts,
-  appImageUploadVerified: true,
+  directExternalBrowserUploads: externalPosts,
+  sameOriginGroqEndpointUsed: requests.some((request) => request.method === 'POST' && new URL(request.url).pathname === '/api/analyze'),
 };
 await writeFile('artifacts/phase0-report.json', JSON.stringify(report, null, 2));
 console.log(JSON.stringify(report, null, 2));

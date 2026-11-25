@@ -1,20 +1,18 @@
 # Traceframe
 
-**A quieter way to inspect where an image came from.**
+**A clearer picture of image origin.**
 
-Traceframe reads Content Credentials embedded in an image and shows basic file details. When a credential records AI generation, Traceframe surfaces that record. When there is no usable record, it says **Origin unknown**—it does not pretend that missing metadata proves an image is real.
-
-> Traceframe is an experimental provenance viewer, not a universal AI-image detector or forensic verification service.
+Traceframe checks embedded Content Credentials and asks a Groq vision model to inspect the image pixels. Credentials can provide recorded origin evidence; the vision model gives a cautious visual assessment when records are missing. Neither proves who made an image or whether it depicts a real event.
 
 ## What it does
 
 - Reads C2PA Content Credentials locally in your browser.
-- Highlights an AI-generation claim when the image’s credential records one.
-- Reports missing, invalid, and unreadable credentials as distinct outcomes.
-- Shows basic file information and optional exploratory image maps.
-- Keeps the selected image on your device; there is no image-upload endpoint.
+- Highlights an AI-generation claim when the credential records one.
+- Sends a resized image to Groq’s `qwen/qwen3.8-27b` vision model for qualitative visual review.
+- Reports missing, invalid, and unreadable credentials separately from the visual assessment.
+- Keeps the Groq API key on the server; the key is never sent to the browser.
 
-## Try it locally
+## Run locally
 
 Requirements: Node.js 22.12 or newer.
 
@@ -22,12 +20,36 @@ Requirements: Node.js 22.12 or newer.
 git clone https://github.com/Yuvraj-Arora-606/traceframe.git
 cd traceframe
 npm ci
+```
+
+Put your key in `.env.local`:
+
+```sh
+GROQ_API_KEY=your_groq_api_key
+```
+
+Then start the app:
+
+```sh
 npm run dev
 ```
 
-Vite prints a local URL, usually `http://localhost:5173`.
+Vite prints a local URL, usually `http://localhost:5173`. Restart the dev server after adding the key. The local API middleware and Vercel function use the same server-side handler.
 
-## Verify a change
+## Read the result
+
+| Result | Meaning |
+| --- | --- |
+| **AI origin recorded** | A readable Content Credential declares AI generation. Review the credential’s signer and history. |
+| **Possible AI-like visual cues** | Groq’s vision model noticed visible details that may be consistent with generated imagery. This is a model opinion, not proof. |
+| **No clear AI-like cues spotted** | The model did not identify a clear visual clue. This does not mean the image is real. |
+| **Visual scan inconclusive / unavailable** | No useful visual assessment was available. The credential result remains separate. |
+
+## Privacy
+
+Content Credentials are inspected locally. When you press **Check this image**, Traceframe resizes the image and sends that copy through its server-side endpoint to Groq for visual review. Groq says inference inputs and outputs are not retained by default, but temporary reliability or abuse logs may retain them for up to 30 days; see [Groq’s data policy](https://console.groq.com/docs/your-data). Do not submit sensitive images. The API key remains server-side.
+
+## Verify changes
 
 ```sh
 npm test
@@ -35,31 +57,15 @@ npm run build
 npm run test:phase0
 ```
 
-The Playwright smoke check uses Chrome and writes its screenshot and report under the ignored `artifacts/` directory. You can set `CHROME_PATH`, `BASE_URL`, `PROFILE_DIR`, or `MOBILE=1`. To check a local reference image, set `IMAGE_PATH`; optionally set `IMAGE_PROVENANCE=ai-generated` or `IMAGE_PROVENANCE=camera-photo` to assert the expected result.
+The Playwright smoke check uses Chrome and writes a screenshot and report under the ignored `artifacts/` directory. Set `CHROME_PATH`, `BASE_URL`, `PROFILE_DIR`, `MOBILE=1`, or `IMAGE_PATH`. Set `IMAGE_PROVENANCE=ai-generated` or `camera-photo` to assert a known sample’s credential result.
 
-## Read the result
+## Deploy to Vercel
 
-| Result | Meaning |
-| --- | --- |
-| **AI origin recorded** | A readable Content Credential declares AI generation. Review the credential’s signer and history before relying on it. |
-| **Origin unknown** | No usable AI-generation record was found. The image may be real or AI-generated. |
-| **Credential failed validation** | A credential was present, but its integrity check reported a problem. |
-| **Origin check unavailable** | The browser could not read the credential. |
-
-Credentials can be absent, stripped, or incomplete. Even a recorded claim needs context; Traceframe does not determine whether an image depicts a true event.
-
-## Privacy and architecture
-
-The app is a static Vite site. Credential parsing and image maps run in the browser using the C2PA Web SDK and its bundled WASM runtime. Traceframe has no accounts, analytics, cookies, database, backend, or image-upload API. The visual classifier was removed after it failed to distinguish the supplied known-AI and camera examples reliably; **there is no AI-likelihood score**.
-
-## Deploy with Vercel
-
-Import this repository in Vercel. The included `vercel.json` sets the Vite framework, installs with `npm ci`, builds with `npm run build`, and publishes `dist/`. No environment variables are required.
+Import the repository in Vercel. The included `vercel.json` uses `npm ci`, `npm run build`, and `dist/`. Add `GROQ_API_KEY` under **Project Settings → Environment Variables**, then redeploy.
 
 ## Built with
 
 - [Vite](https://vite.dev/)
 - [`@contentauth/c2pa-web`](https://github.com/contentauth/c2pa-web) (MIT)
-- [Playwright](https://playwright.dev/) and [Vitest](https://vitest.dev/) for checks
-
-See [the validation notes](docs/model-validation.md) for why the visual detector and score were retired, and [third-party notices](docs/third-party-notices.md) for attribution.
+- [Groq vision API](https://console.groq.com/docs/vision) (`qwen/qwen3.8-27b`)
+- [Playwright](https://playwright.dev/) and [Vitest](https://vitest.dev/)
