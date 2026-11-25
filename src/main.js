@@ -5,11 +5,11 @@ import { makeForensicVisuals } from './forensic-visuals.js';
 
 const app = document.querySelector('#app');
 app.innerHTML = `
-  <header class="topbar"><a class="brand" href="#" aria-label="Traceframe home"><span class="brand-mark" aria-hidden="true">s<span>/</span>s</span><span>Traceframe</span></a><span class="privacy-pill"><span aria-hidden="true"></span>Private by design</span></header>
+  <header class="topbar"><a class="brand" href="#" aria-label="Traceframe home"><span class="brand-mark" aria-hidden="true">TF</span><span>Traceframe</span></a><span class="privacy-pill"><span aria-hidden="true"></span>Private by design</span></header>
   <main>
     <section class="intro" aria-labelledby="page-title">
       <p class="overline">Evidence for image origin</p>
-      <h1 id="page-title">Where did this image<br class="desktop-break"> come from?</h1>
+      <h1 id="page-title">A clearer picture<br class="desktop-break"> of image origin.</h1>
       <p class="lede">Check for recorded image origins and file details. Missing records cannot tell you whether an image is real or AI-generated.</p>
     </section>
     <section class="workspace" aria-label="Image checker">
