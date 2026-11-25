@@ -56,6 +56,9 @@ await page.waitForFunction(() => !document.querySelector('#provenance-card .evid
 const provenanceEvidence = await page.locator('#provenance-card').innerText();
 await page.waitForFunction(() => !document.querySelector('#metadata-clue-card .evidence-status')?.innerText.includes('Reading image metadata'), null, { timeout: 5_000 });
 const metadataEvidence = await page.locator('#metadata-clue-card').innerText();
+const evidenceNote = await page.locator('#evidence-note').innerText();
+if (process.env.IMAGE_PROVENANCE === 'ai-generated' && !evidenceNote.includes('Content Credential above records AI generation')) throw new Error('The evidence note contradicts the recorded AI origin.');
+if (process.env.IMAGE_PROVENANCE === 'camera-photo' && !evidenceNote.includes('No AI label found does not prove')) throw new Error('The missing-origin caveat was not shown.');
 const elapsedToResultMs = Date.now() - started;
 await mkdir('artifacts', { recursive: true });
 await page.screenshot({ path: 'artifacts/phase0-result.png', fullPage: true });
@@ -88,6 +91,7 @@ const report = {
   outcome: resultText,
   provenanceEvidence,
   metadataEvidence,
+  evidenceNote,
   elapsedToResultMs,
   externalRequestsWithPayload: externalPosts,
   appImageUploadVerified: true,

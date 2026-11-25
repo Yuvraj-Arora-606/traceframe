@@ -42,9 +42,9 @@ app.innerHTML = `
       <div class="evidence-grid">
         <article class="evidence-card" id="provenance-card"><span class="evidence-icon">P</span><div><h3>Content credentials</h3><p class="evidence-status">Waiting to inspect</p><p class="evidence-detail">Recorded origin and edit history, when present.</p></div></article>
         <article class="evidence-card" id="metadata-card"><span class="evidence-icon">M</span><div><h3>File information</h3><p class="evidence-status">Waiting to inspect</p><p class="evidence-detail">Basic format and dimensions; metadata can be edited or removed.</p></div></article>
-        <article class="evidence-card" id="metadata-clue-card"><span class="evidence-icon">I</span><div><h3>Image metadata</h3><p class="evidence-status">Waiting to inspect</p><p class="evidence-detail">AI-tool tags or camera details, if saved with the file.</p></div></article>
+        <article class="evidence-card" id="metadata-clue-card"><span class="evidence-icon">I</span><div><h3>File metadata clues</h3><p class="evidence-status">Waiting to inspect</p><p class="evidence-detail">Extra AI-tool tags or camera details saved with the file.</p></div></article>
       </div>
-      <p class="evidence-note">No AI label found does not prove an image is original. Some AI-made images have no label.</p>
+      <p class="evidence-note" id="evidence-note">No AI label found does not prove an image is original. Some AI-made images have no label.</p>
       <div class="visual-lab" id="visual-lab" hidden>
         <div class="visual-lab-heading"><h3>Image signal maps</h3><p>Exploratory views of compression, fine detail, frequency, and color. These are not AI scores and do not affect the result.</p></div>
         <div class="visual-grid" id="visual-grid"></div>
@@ -161,6 +161,22 @@ async function runAnalysis() {
     const isAiRecorded = provenance.status === 'found' && provenance.generated;
     const hasAiMetadataHint = imageMetadata.aiHints?.length > 0;
     const hasCameraDetails = imageMetadata.cameraDetails?.length > 0;
+    const evidenceNote = document.querySelector('#evidence-note');
+    if (isAiRecorded) {
+      evidenceNote.textContent = 'The Content Credential above records AI generation. The separate file-metadata check found no extra AI-tool or camera tags.';
+    } else if (provenance.status === 'invalid') {
+      evidenceNote.textContent = 'This Content Credential failed validation. Do not rely on its origin claim.';
+    } else if (hasAiMetadataHint) {
+      evidenceNote.textContent = 'AI-tool tags come from editable file metadata. They are clues, not verified origin records.';
+    } else if (provenance.status === 'found') {
+      evidenceNote.textContent = 'A Content Credential is present, but it does not record AI generation. That alone does not prove the image is original.';
+    } else if (hasCameraDetails) {
+      evidenceNote.textContent = 'Camera details can be edited or removed. They do not prove the image is an untouched camera original.';
+    } else if (provenance.status === 'unavailable') {
+      evidenceNote.textContent = 'The origin check could not read this file. No conclusion about AI generation can be made.';
+    } else {
+      evidenceNote.textContent = 'No AI label found does not prove an image is original. Some AI-made images have no label.';
+    }
     const originCard = isAiRecorded
       ? `<div class="origin-verdict origin-ai"><span>CONTENT CREDENTIALS</span><strong>AI origin recorded</strong><p>This image’s content credentials record AI generation${provenance.generator ? ` · Generator listed: ${escapeHtml(provenance.generator)}` : ''}.</p></div>`
       : provenance.status === 'invalid'
@@ -198,7 +214,7 @@ async function runAnalysis() {
     } else if (imageMetadata.metadataCount) {
       setEvidence('metadata-clue-card', 'Other metadata found', 'No recognized AI-tool tag or camera details were found. This does not tell us how the image was made.');
     } else {
-      setEvidence('metadata-clue-card', 'No AI or camera details found', 'This file does not include identifying tags for those clues. That does not tell us how the image was made.');
+      setEvidence('metadata-clue-card', 'No extra AI or camera tags found', 'This file does not include extra tags for those clues. That does not tell us how the image was made.');
     }
   } catch (error) {
     if (myRequest !== requestId || selectedFile !== file) return;
